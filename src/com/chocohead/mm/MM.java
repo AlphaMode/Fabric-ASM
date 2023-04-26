@@ -17,6 +17,6 @@ public class MM implements ModInitializer {
 
 	@Override
 	public void onInitialize() {
-		LOGGER.info("Definitely not up to no good");
+		LOGGER.info("Definitely not up to no good, or am I?");
 	}
 }
