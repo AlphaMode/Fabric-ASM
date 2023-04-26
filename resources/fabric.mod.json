@@ -3,7 +3,7 @@
 	"id": "mm",
 	"name": "Manningham Mills",
 	"description": "The mod to do what asie said Fabric shouldn't allow you to do",
-	"version": "2.3",
+	"version": "2.4",
 	"icon": "assets/mm/icon.png",
 	"authors": [
 		"Chocohead"
@@ -17,7 +17,7 @@
 	"environment": "*",
 	"entrypoints": {
 		"main": [
-			"com.chocohead.mm.MM"
+          "com.chocohead.mm.MM"
 		]
 	},
 	"depends": {

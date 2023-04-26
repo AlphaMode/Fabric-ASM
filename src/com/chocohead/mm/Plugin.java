@@ -62,6 +62,8 @@ public final class Plugin implements IMixinConfigPlugin {
 	final Map<String, String> enumStructParents = new HashMap<>();
 	private Map<String, Set<Consumer<ClassNode>>> classModifiers;
 
+	private Map<String, Set<Consumer<ClassNode>>> classModifiersPost;
+
 	private static Consumer<URL> fishAddURL() {
 		ClassLoader loader = Plugin.class.getClassLoader();
 		Method addUrlMethod = null;
@@ -87,6 +89,36 @@ public final class Plugin implements IMixinConfigPlugin {
 		} catch (IllegalAccessException e) {
 			throw new RuntimeException("Couldn't get handle for " + addUrlMethod, e);
 		}
+	}
+
+	private HashMap<String, Set<Consumer<ClassNode>>> classMap(Map<String, byte[]> classGenerators, String mixinPackage) {
+		return new HashMap<String, Set<Consumer<ClassNode>>>() {
+			private static final long serialVersionUID = 4152702952480161028L;
+			private boolean skipGen = false;
+			private int massPool = 1;
+
+			private void generate(String name, Collection<? extends String> targets) {
+				//System.out.println("Generating " + mixinPackage + name + " with targets " + targets);
+				assert name.indexOf('.') < 0;
+				classGenerators.put('/' + mixinPackage + name + ".class", makeMixinBlob(mixinPackage + name, targets));
+				//ClassTinkerers.define(mixinPackage + name, makeMixinBlob(mixinPackage + name, targets)); ^^^
+				mixins.add(name.replace('/', '.'));
+			}
+
+			@Override
+			public Set<Consumer<ClassNode>> put(String key, Set<Consumer<ClassNode>> value) {
+				if (!skipGen) generate(key, Collections.singleton(key));
+				return super.put(key, value);
+			}
+
+			@Override
+			public void putAll(Map<? extends String, ? extends Set<Consumer<ClassNode>>> m) {
+				skipGen = true;
+				generate("MassExport_" + massPool++, m.keySet());
+				super.putAll(m);
+				skipGen = false;
+			}
+		};
 	}
 
 	@Override
@@ -138,33 +170,10 @@ public final class Plugin implements IMixinConfigPlugin {
 		}
 
 		Map<String, byte[]> classGenerators = new HashMap<>();
-		Map<String, Set<Consumer<ClassNode>>> classModifiers = new HashMap<String, Set<Consumer<ClassNode>>>() {
-			private static final long serialVersionUID = 4152702952480161028L;
-			private boolean skipGen = false;
-			private int massPool = 1;
 
-			private void generate(String name, Collection<? extends String> targets) {
-				//System.out.println("Generating " + mixinPackage + name + " with targets " + targets);
-				assert name.indexOf('.') < 0;
-				classGenerators.put('/' + mixinPackage + name + ".class", makeMixinBlob(mixinPackage + name, targets));
-				//ClassTinkerers.define(mixinPackage + name, makeMixinBlob(mixinPackage + name, targets)); ^^^
-				mixins.add(name.replace('/', '.'));
-			}
+		Map<String, Set<Consumer<ClassNode>>> classModifiers = classMap(classGenerators, mixinPackage);
+		Map<String, Set<Consumer<ClassNode>>> classModifiersPost = classMap(classGenerators, mixinPackage);
 
-			@Override
-			public Set<Consumer<ClassNode>> put(String key, Set<Consumer<ClassNode>> value) {
-				if (!skipGen) generate(key, Collections.singleton(key));
-				return super.put(key, value);
-			}
-
-			@Override
-			public void putAll(Map<? extends String, ? extends Set<Consumer<ClassNode>>> m) {
-				skipGen = true;
-				generate("MassExport_" + massPool++, m.keySet());
-				super.putAll(m);
-				skipGen = false;
-			}
-		};
 		Map<String, Consumer<ClassNode>> classReplacers = new HashMap<String, Consumer<ClassNode>>() {
 			private static final long serialVersionUID = -1226882557534215762L;
 			private boolean skipGen = false;
@@ -235,10 +244,11 @@ public final class Plugin implements IMixinConfigPlugin {
 				throw new UnsupportedOperationException();
 			}
 		};
-		ClassTinkerers.INSTANCE.hookUp(fishAddURL(), new UnremovableMap<>(classGenerators), new UnremovableMap<>(classReplacers), new UnremovableMap<>(classModifiers), enumExtenders);
+		ClassTinkerers.INSTANCE.hookUp(fishAddURL(), new UnremovableMap<>(classGenerators), new UnremovableMap<>(classReplacers), new UnremovableMap<>(classModifiers), new UnremovableMap<>(classModifiersPost), enumExtenders);
 
 		ClassTinkerers.addURL(CasualStreamHandler.create(classGenerators));
 		this.classModifiers = classModifiers;
+		this.classModifiersPost = classModifiersPost;
 
 		//System.out.println("Loaded initially with: " + classModifiers);
 
@@ -382,6 +392,12 @@ public final class Plugin implements IMixinConfigPlugin {
 
 	@Override
 	public void postApply(String targetClassName, ClassNode targetClass, String mixinClassName, IMixinInfo mixinInfo) {
+		Set<Consumer<ClassNode>> transformations = classModifiersPost.get(targetClassName.replace('.', '/'));
+		if (transformations != null) {
+			for (Consumer<ClassNode> transformer : transformations) {
+				transformer.accept(targetClass);
+			}
+		}
 		targetClass.interfaces.remove(mixinClassName.replace('.', '/'));
 	}
 }
